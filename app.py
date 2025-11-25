@@ -20,67 +20,95 @@ st.title("Dashboard de Análisis de Sentimientos en Tiempo Real")
 st.markdown("---")
 
 def load_local_sentiment_data():
-    """Cargar datos desde archivos Parquet locales sin duplicados"""
+    """Cargar datos desde archivos Parquet locales eliminando duplicados"""
     try:
         if not os.path.exists("stream_output"):
+            st.warning("No se encuentra la carpeta 'stream_output'. Usando datos de ejemplo.")
             return create_sample_data()
         
         parquet_files = glob.glob("stream_output/*.parquet") + glob.glob("stream_output/*.snappy.parquet")
         
         if not parquet_files:
+            st.warning("No se encontraron archivos Parquet en 'stream_output'. Usando datos de ejemplo.")
             return create_sample_data()
         
-        # ESTRATEGIA: Usar solo el archivo MÁS RECIENTE para evitar duplicados
-        # Obtener información de los archivos
-        file_info = []
+        st.info(f"Se encontraron {len(parquet_files)} archivos Parquet")
+        
+        # Leer todos los archivos pero eliminar duplicados
+        dfs = []
         for file in parquet_files:
             try:
-                # Obtener timestamp de modificación del archivo
-                mod_time = os.path.getmtime(file)
-                file_info.append({
-                    'file': file,
-                    'mod_time': mod_time,
-                    'size': os.path.getsize(file)
-                })
+                df = pd.read_parquet(file)
+                if not df.empty:
+                    # Agregar columna para identificar el archivo fuente
+                    df['_source_file'] = os.path.basename(file)
+                    dfs.append(df)
+                    st.success(f"✅ {os.path.basename(file)}: {len(df)} registros")
+                else:
+                    st.warning(f"⚠️ {os.path.basename(file)}: vacío")
             except Exception as e:
-                st.warning(f"No se pudo obtener info de {os.path.basename(file)}: {str(e)}")
+                st.error(f"❌ Error leyendo {os.path.basename(file)}: {str(e)}")
         
-        if not file_info:
+        if not dfs:
+            st.error("No se pudieron leer datos de ningún archivo. Usando datos de ejemplo.")
             return create_sample_data()
         
-        # Ordenar por fecha de modificación (más reciente primero)
-        file_info.sort(key=lambda x: x['mod_time'], reverse=True)
+        # Combinar todos los DataFrames
+        combined_df = pd.concat(dfs, ignore_index=True)
+        st.info(f"Total antes de eliminar duplicados: {len(combined_df)} registros")
         
-        # Usar SOLO el archivo más reciente
-        latest_file = file_info[0]['file']
-        st.info(f"Usando archivo más reciente: {os.path.basename(latest_file)}")
+        # Eliminar duplicados basados en columnas clave
+        if 'tweet' in combined_df.columns and 'ingest_ts' in combined_df.columns:
+            # Eliminar registros con mismo tweet y timestamp
+            combined_df = combined_df.drop_duplicates(subset=['tweet', 'ingest_ts'])
+            st.info(f"Después de eliminar duplicados (tweet + timestamp): {len(combined_df)} registros únicos")
+        elif 'tweet' in combined_df.columns:
+            # Eliminar registros con mismo tweet
+            combined_df = combined_df.drop_duplicates(subset=['tweet'])
+            st.info(f"Después de eliminar duplicados (tweet): {len(combined_df)} registros únicos")
+        else:
+            # Eliminar duplicados completos
+            original_count = len(combined_df)
+            combined_df = combined_df.drop_duplicates()
+            st.info(f"Después de eliminar duplicados completos: {len(combined_df)} registros únicos (de {original_count})")
         
-        try:
-            df = pd.read_parquet(latest_file)
-            st.success(f"Datos cargados: {len(df)} registros del archivo más reciente")
-            return df
-        except Exception as e:
-            st.error(f"Error leyendo archivo {os.path.basename(latest_file)}: {str(e)}")
-            return create_sample_data()
+        # Mostrar información sobre los archivos fuente
+        if '_source_file' in combined_df.columns:
+            st.write("**Archivos fuente:**")
+            file_counts = combined_df['_source_file'].value_counts()
+            for file, count in file_counts.items():
+                st.write(f"- {file}: {count} registros")
+            # Eliminar columna temporal
+            combined_df = combined_df.drop('_source_file', axis=1)
+        
+        return combined_df
     
     except Exception as e:
-        st.error(f"Error cargando datos: {str(e)}")
+        st.error(f"Error crítico cargando datos: {str(e)}")
         return create_sample_data()
 
 def create_sample_data():
-    """Crear datos de ejemplo"""
+    """Crear datos de ejemplo más robustos"""
     sample_data = {
         "tweet": [
-            "Me encanta este producto, es increible!",
-            "No me gusta para nada, muy decepcionado",
-            "Excelente servicio al cliente",
-            "Pesima calidad, no lo recomiendo", 
+            "Me encanta este producto, es increíble! ",
+            "No me gusta para nada, muy decepcionado ",
+            "Excelente servicio al cliente, muy profesionales",
+            "Pésima calidad, no lo recomiendo ",
+            "Increíble experiencia, volvería a comprar sin duda ",
+            "Muy mala atención, no responden las consultas ",
+            "Producto de buena calidad pero delivery lento ",
+            "Totalmente satisfecho con mi compra ",
+            "No cumple con lo prometido, muy decepcionante ",
+            "Rápido y eficiente, excelente trabajo "
         ],
-        "prediction_label": [1, 0, 1, 0],
-        "positive_probability": [0.95, 0.15, 0.89, 0.23],
-        "ingest_ts": [datetime.now()] * 4
+        "prediction_label": [1, 0, 1, 0, 1, 0, 1, 1, 0, 1],
+        "positive_probability": [0.95, 0.15, 0.89, 0.23, 0.92, 0.18, 0.76, 0.88, 0.27, 0.91],
+        "ingest_ts": [datetime.now() for _ in range(10)]
     }
-    return pd.DataFrame(sample_data)
+    df = pd.DataFrame(sample_data)
+    st.warning("⚠️ Usando datos de ejemplo para demostración")
+    return df
 
 def analyze_sentiment_data(df):
     """Analizar datos de sentimientos con la estructura correcta"""
@@ -91,10 +119,14 @@ def analyze_sentiment_data(df):
     probability_col = 'positive_probability'
     timestamp_col = 'ingest_ts'
     
+    # Verificar columnas disponibles
+    available_cols = df.columns.tolist()
+    st.write(f"**Columnas disponibles:** {available_cols}")
+    
     # Calcular métricas
     total_tweets = len(df)
-    positive_count = len(df[df[prediction_col] == 1])
-    negative_count = len(df[df[prediction_col] == 0])
+    positive_count = len(df[df[prediction_col] == 1]) if prediction_col in df.columns else 0
+    negative_count = len(df[df[prediction_col] == 0]) if prediction_col in df.columns else 0
     positive_percentage = (positive_count / total_tweets) * 100 if total_tweets > 0 else 0
     
     # Calcular probabilidad promedio
@@ -119,11 +151,11 @@ def generate_wordcloud(df, sentiment_type):
         # Filtrar datos por sentimiento
         if sentiment_type == 'positive':
             filtered_df = df[df['prediction_label'] == 1]
-            title = "Palabras Mas Frecuentes - Sentimientos Positivos"
+            title = "Palabras Más Frecuentes - Sentimientos Positivos"
             colormap = 'Greens'
         else:
             filtered_df = df[df['prediction_label'] == 0]
-            title = "Palabras Mas Frecuentes - Sentimientos Negativos"
+            title = "Palabras Más Frecuentes - Sentimientos Negativos"
             colormap = 'Reds'
         
         if len(filtered_df) == 0:
@@ -143,7 +175,8 @@ def generate_wordcloud(df, sentiment_type):
             colormap=colormap,
             max_words=50,
             contour_width=1,
-            contour_color='steelblue'
+            contour_color='steelblue',
+            stopwords=['que', 'de', 'en', 'y', 'la', 'el', 'los', 'las', 'un', 'una', 'es', 'se', 'no']
         ).generate(text)
         
         # Crear figura
@@ -159,12 +192,20 @@ def generate_wordcloud(df, sentiment_type):
         return None
 
 # Sidebar
-st.sidebar.title("Configuracion")
-if st.sidebar.button("Actualizar Datos"):
+st.sidebar.title("Configuración")
+if st.sidebar.button("🔄 Actualizar Datos"):
     st.rerun()
 
+st.sidebar.markdown("---")
+st.sidebar.info("""
+**Información:**
+- Carga datos de archivos Parquet
+- Elimina duplicados automáticamente
+- Muestra análisis en tiempo real
+""")
+
 # Cargar y analizar datos
-with st.spinner("Cargando datos de analisis..."):
+with st.spinner(" Cargando datos de análisis..."):
     df = load_local_sentiment_data()
     analysis = analyze_sentiment_data(df)
 
@@ -181,7 +222,7 @@ timestamp_col = analysis['timestamp_col']
 df = analysis['df']
 
 # Métricas principales
-st.subheader("Metricas de Analisis en Tiempo Real")
+st.subheader(" Métricas de Análisis en Tiempo Real")
 col1, col2, col3, col4, col5 = st.columns(5)
 
 with col1:
@@ -201,7 +242,7 @@ with col5:
 
 # Gráficos principales
 st.markdown("---")
-st.subheader("Visualizaciones Principales")
+st.subheader("📊 Visualizaciones Principales")
 
 col1, col2 = st.columns(2)
 
@@ -217,9 +258,10 @@ with col1:
         values='Cantidad', 
         names='Sentimiento',
         color='Sentimiento',
-        color_discrete_map={'Positivo':'#00ff00', 'Negativo':'#ff0000'},
-        title="Distribucion de Sentimientos"
+        color_discrete_map={'Positivo':'#2ecc71', 'Negativo':'#e74c3c'},
+        title="Distribución de Sentimientos"
     )
+    fig_pie.update_traces(textposition='inside', textinfo='percent+label')
     st.plotly_chart(fig_pie, use_container_width=True)
 
 with col2:
@@ -228,8 +270,9 @@ with col2:
         fig_hist = px.histogram(
             df, 
             x=probability_col,
-            title="Distribucion de Probabilidades Positivas",
-            labels={probability_col: 'Probabilidad de Sentimiento Positivo'}
+            title="Distribución de Probabilidades Positivas",
+            labels={probability_col: 'Probabilidad de Sentimiento Positivo'},
+            color_discrete_sequence=['#3498db']
         )
         st.plotly_chart(fig_hist, use_container_width=True)
     else:
@@ -238,14 +281,14 @@ with col2:
             x='Sentimiento',
             y='Cantidad',
             color='Sentimiento',
-            color_discrete_map={'Positivo':'#00ff00', 'Negativo':'#ff0000'},
+            color_discrete_map={'Positivo':'#2ecc71', 'Negativo':'#e74c3c'},
             title="Conteo por Sentimiento"
         )
         st.plotly_chart(fig_bar, use_container_width=True)
 
 # Word Clouds
 st.markdown("---")
-st.subheader("Analisis de Texto - Nubes de Palabras")
+st.subheader(" Análisis de Texto - Nubes de Palabras")
 
 if total_tweets > 0:
     col1, col2 = st.columns(2)
@@ -270,20 +313,22 @@ else:
 
 # Análisis recientes
 st.markdown("---")
-st.subheader("Analisis Recientes")
+st.subheader(" Análisis Recientes")
 
 # Ordenar por timestamp si está disponible
-if timestamp_col in df.columns:
+if timestamp_col in df.columns and timestamp_col in df.columns:
     recent_data = df.sort_values(timestamp_col, ascending=False).head(10)
 else:
     recent_data = df.head(10)
 
+st.write(f"Mostrando {len(recent_data)} tweets más recientes:")
+
 for idx, row in recent_data.iterrows():
-    sentiment_value = row[prediction_col]
+    sentiment_value = row[prediction_col] if prediction_col in df.columns else 1
     probability = row.get(probability_col, 'N/A')
     
     # Formatear la probabilidad correctamente
-    if isinstance(probability, float):
+    if isinstance(probability, (int, float)):
         prob_formatted = f"{probability:.3f}"
     else:
         prob_formatted = str(probability)
@@ -293,7 +338,7 @@ for idx, row in recent_data.iterrows():
     border_color = "#c3e6cb" if sentiment_value == 1 else "#f5c6cb"
     text_color = "#155724" if sentiment_value == 1 else "#721c24"
     
-    tweet_text = row[text_col]
+    tweet_text = row[text_col] if text_col in df.columns else "Texto no disponible"
     timestamp = row.get(timestamp_col, 'N/A')
     
     st.markdown(f"""
@@ -311,7 +356,7 @@ for idx, row in recent_data.iterrows():
 
 # Información técnica
 st.markdown("---")
-st.subheader("Informacion Tecnica")
+st.subheader(" Información Técnica")
 
 col1, col2 = st.columns(2)
 
@@ -327,17 +372,17 @@ with col1:
     })
 
 with col2:
-    st.write("**Columnas Utilizadas:**")
-    st.write(f"**Texto:** `{text_col}`")
-    st.write(f"**Prediccion:** `{prediction_col}`")
-    st.write(f"**Probabilidad:** `{probability_col}`")
-    st.write(f"**Timestamp:** `{timestamp_col}`")
+    st.write("**Columnas Disponibles:**")
+    available_cols = df.columns.tolist()
+    for col in available_cols:
+        st.write(f"- `{col}`")
 
 # Footer
 st.markdown("---")
 st.markdown(
     "<div style='text-align: center; color: #6c757d;'>"
-    "Proyecto Big Data - Analisis de Sentimientos con Spark ML<br>"
+    "Proyecto Big Data - Análisis de Sentimientos con Spark ML<br>"
+    "Dashboard desarrollado con Streamlit"
     "</div>", 
     unsafe_allow_html=True
 )
