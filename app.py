@@ -2,6 +2,7 @@ import streamlit as st
 import os
 import glob
 from datetime import datetime
+import collections
 
 # Configuración de la página
 st.set_page_config(
@@ -13,7 +14,7 @@ st.set_page_config(
 st.title("Dashboard de Analisis de Sentimientos en Tiempo Real")
 st.markdown("---")
 
-# Intentar importar TODAS las dependencias con fallbacks robustos
+# Intentar importar dependencias
 try:
     import pandas as pd
     PANDAS_AVAILABLE = True
@@ -29,30 +30,22 @@ except ImportError:
     st.warning("Plotly no disponible - Usando graficos basicos")
 
 try:
-    from wordcloud import WordCloud
     import matplotlib.pyplot as plt
-    WORDCLOUD_AVAILABLE = True
+    MATPLOTLIB_AVAILABLE = True
 except ImportError:
-    WORDCLOUD_AVAILABLE = False
-    st.warning("WordCloud no disponible - Analisis de texto limitado")
-
-try:
-    import numpy as np
-    NUMPY_AVAILABLE = True
-except ImportError:
-    NUMPY_AVAILABLE = False
-    st.warning("NumPy no disponible - Calculos limitados")
+    MATPLOTLIB_AVAILABLE = False
+    st.warning("Matplotlib no disponible - Visualizaciones limitadas")
 
 def create_sample_data():
     """Crear datos de ejemplo robustos"""
     sample_data = {
         "tweet": [
-            "Me encanta este producto, es increible la calidad que ofrece",
-            "No me gusta para nada, muy decepcionado con el servicio",
-            "Excelente atencion al cliente, resolvieron mi problema rapido",
-            "Pesima calidad, el producto se dano en la primera semana",
-            "Entrega rapida y producto en perfecto estado, recomendado",
-            "Mala experiencia, el soporte tecnico no sabe resolver",
+            "Me encanta este producto es increible la calidad que ofrece",
+            "No me gusta para nada muy decepcionado con el servicio",
+            "Excelente atencion al cliente resolvieron mi problema rapido",
+            "Pesima calidad el producto se dano en la primera semana",
+            "Entrega rapida y producto en perfecto estado recomendado",
+            "Mala experiencia el soporte tecnico no sabe resolver",
             "Funcionalidades avanzadas a un precio muy competitivo",
             "Interfaz confusa y dificil de usar para principiantes",
             "Actualizaciones constantes que mejoran la experiencia",
@@ -103,40 +96,64 @@ def load_sentiment_data():
         sample_data = create_sample_data()
         return pd.DataFrame(sample_data)
 
-def generate_wordcloud_safe(text_data, title, color_scheme='viridis'):
-    """Generar wordcloud con manejo de errores"""
-    if not WORDCLOUD_AVAILABLE or not text_data:
+def analyze_frequent_words(text_data, title, max_words=15):
+    """Analizar palabras frecuentes sin wordcloud"""
+    if not text_data:
         return None
     
     try:
-        # Combinar texto
-        text = ' '.join(str(tweet) for tweet in text_data if tweet)
+        # Palabras a excluir
+        stop_words = {
+            'el', 'la', 'los', 'las', 'de', 'en', 'y', 'que', 'con', 'para', 
+            'por', 'como', 'me', 'mi', 'un', 'una', 'unos', 'unas', 'es', 'son',
+            'se', 'no', 'si', 'lo', 'le', 'al', 'del', 'su', 'sus', 'este', 
+            'esta', 'estos', 'estas', 'a', 'o', 'u', 'the', 'and', 'is', 'in',
+            'on', 'at', 'to', 'for', 'with', 'my', 'your', 'our', 'their'
+        }
         
-        if not text.strip():
+        # Contar palabras
+        word_counts = collections.Counter()
+        for text in text_data:
+            if isinstance(text, str):
+                words = text.lower().split()
+                for word in words:
+                    # Filtrar palabras
+                    if (len(word) > 3 and 
+                        word.isalpha() and 
+                        word not in stop_words):
+                        word_counts[word] += 1
+        
+        # Tomar las palabras mas frecuentes
+        top_words = word_counts.most_common(max_words)
+        
+        if not top_words:
             return None
+            
+        # Crear datos para el grafico
+        words, counts = zip(*top_words)
         
-        # Crear wordcloud
-        wordcloud = WordCloud(
-            width=800,
-            height=400,
-            background_color='white',
-            colormap=color_scheme,
-            max_words=50,
-            contour_width=1,
-            contour_color='steelblue'
-        ).generate(text)
-        
-        # Crear figura
-        fig, ax = plt.subplots(figsize=(10, 5))
-        ax.imshow(wordcloud, interpolation='bilinear')
-        ax.axis('off')
-        ax.set_title(title, fontsize=16, fontweight='bold', pad=20)
-        plt.tight_layout()
-        
-        return fig
-        
+        if PLOTLY_AVAILABLE:
+            # Grafico de barras horizontal con Plotly
+            fig = px.bar(
+                x=list(counts),
+                y=list(words),
+                orientation='h',
+                title=title,
+                labels={'x': 'Frecuencia', 'y': 'Palabras'},
+                color=list(range(len(words))),
+                color_continuous_scale='viridis'
+            )
+            fig.update_layout(showlegend=False)
+            return fig
+        else:
+            # Grafico basico con Streamlit
+            st.write(f"**{title}**")
+            for word, count in top_words:
+                st.write(f"{word}: {count}")
+            return None
+            
     except Exception as e:
-        st.error(f"Error generando wordcloud: {str(e)}")
+        st.error(f"Error analizando palabras: {str(e)}")
         return None
 
 # Sidebar para controles
@@ -171,7 +188,7 @@ if PANDAS_AVAILABLE:
     with col4:
         st.metric("Tasa Positividad", f"{positive_percentage:.1f}%")
     
-    # Visualizaciones
+    # Visualizaciones principales
     st.markdown("---")
     st.subheader("Visualizaciones")
     
@@ -202,38 +219,29 @@ if PANDAS_AVAILABLE:
             st.write(f"Negativos: {negative_count} ({100-positive_percentage:.1f}%)")
             st.progress((100-positive_percentage)/100)
     
-    # WORD CLOUDS - ESENCIAL
+    # ANALISIS DE PALABRAS FRECUENTES
     st.markdown("---")
-    st.subheader("Analisis de Texto - Nubes de Palabras")
+    st.subheader("Analisis de Texto - Palabras Frecuentes")
     
-    if WORDCLOUD_AVAILABLE:
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            # Word Cloud Positivo
-            positive_tweets = df[df['prediction_label'] == 1]['tweet'].tolist()
-            wc_pos = generate_wordcloud_safe(positive_tweets, "Palabras Mas Frecuentes - Sentimientos Positivos", 'Greens')
-            if wc_pos:
-                st.pyplot(wc_pos)
-            else:
-                st.info("No hay datos suficientes para wordcloud positivo")
-        
-        with col2:
-            # Word Cloud Negativo
-            negative_tweets = df[df['prediction_label'] == 0]['tweet'].tolist()
-            wc_neg = generate_wordcloud_safe(negative_tweets, "Palabras Mas Frecuentes - Sentimientos Negativos", 'Reds')
-            if wc_neg:
-                st.pyplot(wc_neg)
-            else:
-                st.info("No hay datos suficientes para wordcloud negativo")
-    else:
-        st.error("WordCloud no disponible - Instala wordcloud y matplotlib")
-        st.info("""
-        Para habilitar WordClouds, asegurate de que en requirements.txt tengas:
-        wordcloud==1.9.2
-        matplotlib==3.7.0
-        Pillow==10.0.0
-        """)
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # Palabras frecuentes positivas
+        positive_tweets = df[df['prediction_label'] == 1]['tweet'].tolist()
+        words_pos = analyze_frequent_words(positive_tweets, "Palabras Mas Frecuentes - Sentimientos Positivos")
+        if words_pos:
+            st.plotly_chart(words_pos, use_container_width=True)
+        else:
+            st.info("No hay datos suficientes para analizar palabras positivas")
+    
+    with col2:
+        # Palabras frecuentes negativas
+        negative_tweets = df[df['prediction_label'] == 0]['tweet'].tolist()
+        words_neg = analyze_frequent_words(negative_tweets, "Palabras Mas Frecuentes - Sentimientos Negativos")
+        if words_neg:
+            st.plotly_chart(words_neg, use_container_width=True)
+        else:
+            st.info("No hay datos suficientes para analizar palabras negativas")
     
     # Analisis recientes
     st.markdown("---")
@@ -282,8 +290,7 @@ if PANDAS_AVAILABLE:
             "total_registros": total_tweets,
             "positivos": positive_count,
             "negativos": negative_count,
-            "porcentaje_positivo": f"{positive_percentage:.2f}%",
-            "archivos_cargados": len(glob.glob("stream_output/*.parquet")) + len(glob.glob("stream_output/*.snappy.parquet"))
+            "porcentaje_positivo": f"{positive_percentage:.2f}%"
         })
 
     with col2:
@@ -291,28 +298,19 @@ if PANDAS_AVAILABLE:
         status_data = {
             "pandas": "Disponible" if PANDAS_AVAILABLE else "No disponible",
             "plotly": "Disponible" if PLOTLY_AVAILABLE else "No disponible",
-            "wordcloud": "Disponible" if WORDCLOUD_AVAILABLE else "No disponible",
-            "numpy": "Disponible" if NUMPY_AVAILABLE else "No disponible"
+            "matplotlib": "Disponible" if MATPLOTLIB_AVAILABLE else "No disponible"
         }
         st.json(status_data)
 
 else:
     st.error("Pandas no esta disponible - Dashboard limitado")
-    st.info("""
-    El problema es que Streamlit Cloud no puede instalar pandas/pyarrow.
-    
-    Solucion:
-    1. Usa la version compatible de pandas: pandas==1.5.3
-    2. Elimina pyarrow si no es esencial
-    3. Actualiza el archivo requirements.txt
-    """)
 
 # Footer
 st.markdown("---")
 st.markdown(
     "<div style='text-align: center; color: #6c757d;'>"
     "Proyecto Big Data - Analisis de Sentimientos con Spark ML<br>"
-    "Dashboard con WordClouds integradas"
+    "Dashboard con Analisis de Texto Avanzado"
     "</div>", 
     unsafe_allow_html=True
 )
