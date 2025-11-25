@@ -1,0 +1,2 @@
+v1
+{"path":"s3://my-sentiment-bucket-juan-pacheco/stream_output/part-00000-b00b9d4c-246e-4134-acd9-1766564966e3-c000.snappy.parquet","size":1954,"isDir":false,"modificationTime":1764027997000,"blockReplication":1,"blockSize":67108864,"action":"add"}

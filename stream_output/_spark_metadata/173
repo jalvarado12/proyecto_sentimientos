@@ -1,0 +1,3 @@
+v1
+{"path":"s3://my-sentiment-bucket-juan-pacheco/stream_output/part-00000-0dee0b97-ee2c-47fc-8f10-a5d225ff672a-c000.snappy.parquet","size":704,"isDir":false,"modificationTime":1764027835000,"blockReplication":1,"blockSize":67108864,"action":"add"}
+{"path":"s3://my-sentiment-bucket-juan-pacheco/stream_output/part-00003-f50ae7a8-ff06-491e-a53f-4ceb615f5604-c000.snappy.parquet","size":1924,"isDir":false,"modificationTime":1764027833000,"blockReplication":1,"blockSize":67108864,"action":"add"}

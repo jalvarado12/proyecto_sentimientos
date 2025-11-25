@@ -1,0 +1,5 @@
+v1
+{"path":"s3://my-sentiment-bucket-juan-pacheco/stream_output/part-00000-b898c8b0-e331-4150-b80b-a713f37ca7d3-c000.snappy.parquet","size":2360,"isDir":false,"modificationTime":1764027607000,"blockReplication":1,"blockSize":67108864,"action":"add"}
+{"path":"s3://my-sentiment-bucket-juan-pacheco/stream_output/part-00001-597a5fd9-1fa6-4891-9e35-1b82395a95f2-c000.snappy.parquet","size":2578,"isDir":false,"modificationTime":1764027603000,"blockReplication":1,"blockSize":67108864,"action":"add"}
+{"path":"s3://my-sentiment-bucket-juan-pacheco/stream_output/part-00002-24d47e58-4aaa-45a6-a79c-34d8df70e902-c000.snappy.parquet","size":2240,"isDir":false,"modificationTime":1764027603000,"blockReplication":1,"blockSize":67108864,"action":"add"}
+{"path":"s3://my-sentiment-bucket-juan-pacheco/stream_output/part-00003-cf290737-05f1-48b8-a685-6579c5ef2223-c000.snappy.parquet","size":2760,"isDir":false,"modificationTime":1764027612000,"blockReplication":1,"blockSize":67108864,"action":"add"}
