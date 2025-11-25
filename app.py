@@ -20,7 +20,7 @@ st.title("Dashboard de Análisis de Sentimientos en Tiempo Real")
 st.markdown("---")
 
 def load_local_sentiment_data():
-    """Cargar datos desde archivos Parquet locales"""
+    """Cargar datos desde archivos Parquet locales sin duplicados"""
     try:
         if not os.path.exists("stream_output"):
             return create_sample_data()
@@ -30,20 +30,37 @@ def load_local_sentiment_data():
         if not parquet_files:
             return create_sample_data()
         
-        # Leer TODOS los archivos Parquet y combinarlos
-        dfs = []
+        # ESTRATEGIA: Usar solo el archivo MÁS RECIENTE para evitar duplicados
+        # Obtener información de los archivos
+        file_info = []
         for file in parquet_files:
             try:
-                df = pd.read_parquet(file)
-                dfs.append(df)
+                # Obtener timestamp de modificación del archivo
+                mod_time = os.path.getmtime(file)
+                file_info.append({
+                    'file': file,
+                    'mod_time': mod_time,
+                    'size': os.path.getsize(file)
+                })
             except Exception as e:
-                st.error(f"Error leyendo {os.path.basename(file)}: {str(e)}")
+                st.warning(f"No se pudo obtener info de {os.path.basename(file)}: {str(e)}")
         
-        if dfs:
-            combined_df = pd.concat(dfs, ignore_index=True)
-            st.success(f"Datos cargados: {len(combined_df)} registros de {len(dfs)} archivos")
-            return combined_df
-        else:
+        if not file_info:
+            return create_sample_data()
+        
+        # Ordenar por fecha de modificación (más reciente primero)
+        file_info.sort(key=lambda x: x['mod_time'], reverse=True)
+        
+        # Usar SOLO el archivo más reciente
+        latest_file = file_info[0]['file']
+        st.info(f"Usando archivo más reciente: {os.path.basename(latest_file)}")
+        
+        try:
+            df = pd.read_parquet(latest_file)
+            st.success(f"Datos cargados: {len(df)} registros del archivo más reciente")
+            return df
+        except Exception as e:
+            st.error(f"Error leyendo archivo {os.path.basename(latest_file)}: {str(e)}")
             return create_sample_data()
     
     except Exception as e:
@@ -306,7 +323,7 @@ with col1:
         "negativos": negative_count,
         "porcentaje_positivo": f"{positive_percentage:.2f}%",
         "probabilidad_promedio": f"{avg_positive_prob:.3f}",
-        "archivos_cargados": len(glob.glob("stream_output/*.parquet")) + len(glob.glob("stream_output/*.snappy.parquet"))
+        "archivos_encontrados": len(glob.glob("stream_output/*.parquet")) + len(glob.glob("stream_output/*.snappy.parquet"))
     })
 
 with col2:
