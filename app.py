@@ -14,7 +14,7 @@ st.set_page_config(
 st.title("Dashboard de Analisis de Sentimientos en Tiempo Real")
 st.markdown("---")
 
-# Intentar importar dependencias
+# Intentar importar dependencias esenciales
 try:
     import pandas as pd
     PANDAS_AVAILABLE = True
@@ -28,13 +28,6 @@ try:
 except ImportError:
     PLOTLY_AVAILABLE = False
     st.warning("Plotly no disponible - Usando graficos basicos")
-
-try:
-    import matplotlib.pyplot as plt
-    MATPLOTLIB_AVAILABLE = True
-except ImportError:
-    MATPLOTLIB_AVAILABLE = False
-    st.warning("Matplotlib no disponible - Visualizaciones limitadas")
 
 def create_sample_data():
     """Crear datos de ejemplo robustos"""
@@ -97,7 +90,7 @@ def load_sentiment_data():
         return pd.DataFrame(sample_data)
 
 def analyze_frequent_words(text_data, title, max_words=15):
-    """Analizar palabras frecuentes sin wordcloud"""
+    """Analizar palabras frecuentes sin dependencias externas"""
     if not text_data:
         return None
     
@@ -140,16 +133,16 @@ def analyze_frequent_words(text_data, title, max_words=15):
                 orientation='h',
                 title=title,
                 labels={'x': 'Frecuencia', 'y': 'Palabras'},
-                color=list(range(len(words))),
+                color=list(counts),
                 color_continuous_scale='viridis'
             )
-            fig.update_layout(showlegend=False)
+            fig.update_layout(showlegend=False, yaxis={'categoryorder':'total ascending'})
             return fig
         else:
-            # Grafico basico con Streamlit
+            # Tabla basica con Streamlit
             st.write(f"**{title}**")
             for word, count in top_words:
-                st.write(f"{word}: {count}")
+                st.write(f"- {word}: {count}")
             return None
             
     except Exception as e:
@@ -193,7 +186,7 @@ if PANDAS_AVAILABLE:
     st.subheader("Visualizaciones")
     
     if PLOTLY_AVAILABLE:
-        # Grafico Plotly
+        # Grafico Plotly de torta
         sentiment_dist = pd.DataFrame({
             'Sentimiento': ['Positivo', 'Negativo'],
             'Cantidad': [positive_count, negative_count]
@@ -208,15 +201,26 @@ if PANDAS_AVAILABLE:
             title="Distribucion de Sentimientos"
         )
         st.plotly_chart(fig_pie, use_container_width=True)
+        
+        # Grafico de probabilidades
+        if 'positive_probability' in df.columns:
+            fig_hist = px.histogram(
+                df, 
+                x='positive_probability',
+                title="Distribucion de Probabilidades",
+                labels={'positive_probability': 'Probabilidad Positiva'},
+                nbins=20
+            )
+            st.plotly_chart(fig_hist, use_container_width=True)
     else:
         # Graficos basicos
         col1, col2 = st.columns(2)
         with col1:
-            st.write("Distribucion de Sentimientos")
+            st.write("**Distribucion de Sentimientos**")
             st.write(f"Positivos: {positive_count} ({positive_percentage:.1f}%)")
             st.progress(positive_percentage/100)
         with col2:
-            st.write(f"Negativos: {negative_count} ({100-positive_percentage:.1f}%)")
+            st.write(f"**Negativos:** {negative_count} ({100-positive_percentage:.1f}%)")
             st.progress((100-positive_percentage)/100)
     
     # ANALISIS DE PALABRAS FRECUENTES
@@ -285,7 +289,7 @@ if PANDAS_AVAILABLE:
     col1, col2 = st.columns(2)
 
     with col1:
-        st.write("Estructura del Dataset:")
+        st.write("**Estructura del Dataset:**")
         st.json({
             "total_registros": total_tweets,
             "positivos": positive_count,
@@ -294,23 +298,28 @@ if PANDAS_AVAILABLE:
         })
 
     with col2:
-        st.write("Estado de Dependencias:")
+        st.write("**Estado de Dependencias:**")
         status_data = {
             "pandas": "Disponible" if PANDAS_AVAILABLE else "No disponible",
-            "plotly": "Disponible" if PLOTLY_AVAILABLE else "No disponible",
-            "matplotlib": "Disponible" if MATPLOTLIB_AVAILABLE else "No disponible"
+            "plotly": "Disponible" if PLOTLY_AVAILABLE else "No disponible"
         }
         st.json(status_data)
 
 else:
     st.error("Pandas no esta disponible - Dashboard limitado")
+    st.info("""
+    Para solucionar este problema:
+    1. Asegurate de que requirements.txt solo tiene librerias compatibles
+    2. Usa versiones conocidas que funcionen en Streamlit Cloud
+    3. Evita librerias que requieran compilacion
+    """)
 
 # Footer
 st.markdown("---")
 st.markdown(
     "<div style='text-align: center; color: #6c757d;'>"
     "Proyecto Big Data - Analisis de Sentimientos con Spark ML<br>"
-    "Dashboard con Analisis de Texto Avanzado"
+    "Dashboard compatible con Streamlit Cloud"
     "</div>", 
     unsafe_allow_html=True
 )
